@@ -7,7 +7,7 @@ from docx import Document
 from openai import OpenAI
 from starlette.responses import StreamingResponse, JSONResponse
 
-from back_end.constant import MESSAGES
+from constant import MESSAGES
 from lanny_tools import Chatbot, process_file, chunk_text, analyze_with_gpt, embedding, vector_db_add, \
     search_in_vector_db, get_context
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
