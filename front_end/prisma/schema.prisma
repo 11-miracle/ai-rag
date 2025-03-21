@@ -1,0 +1,46 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// generator client {
+//   provider = "prisma-client-js"
+// }
+
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL")
+// }
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户模型
+model Users {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  password      String
+  username      String
+  createdAt     DateTime  @default(now())
+  permission    String    @default("user")
+}
+
+// 验证码模型
+model VerificationCode {
+  id        String    @id @default(cuid())
+  email     String
+  code      String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  used      Boolean   @default(false)
+
+  @@index([email, code])
+  @@index([email, expiresAt])
+}
