@@ -47,7 +47,7 @@ async def say_hello(name: str):
 
 
 @app.get("/chatbot")
-async def say_hello(query: str = None):
+async def chatbot(query: str = None):
     if query is None:
         return {"message": "Hello, World!"}
     logging.debug(f"Received name: {query}")

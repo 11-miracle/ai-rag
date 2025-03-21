@@ -11,14 +11,18 @@ from chromadb.api.types import IncludeEnum
 from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIEmbeddingFunction
 from docx import Document
 from openai import OpenAI
-
-from constant import LLM_BASE_URL, HOST, USER, PASSWORD, DATABASE, PORT
+from dotenv import load_dotenv
+from constant import LLM_BASE_URL, HOST, USER, PASSWORD, DATABASE, PORT, LLM_CLOUD_URL, LLM_MODEL
 
 
 class Chatbot:
     def __init__(self):
+        # 加载 .env 文件
+        load_dotenv()
+        api_key = os.getenv('QIANWEN_API_KEY')
         # 设置本地服务器地址
-        self.client = OpenAI(base_url=f"{LLM_BASE_URL}/v1", api_key="lm_studio")
+        # self.client = OpenAI(base_url=f"{LLM_BASE_URL}/v1", api_key="lm_studio")
+        self.client = OpenAI(base_url=f"{LLM_CLOUD_URL}", api_key=api_key)
         # self.messages = [
         #     {"role": "system",
         #      "content": "你是专业的厨师，只能回答与做饭相关的问题。如果用户问到了其他问题，请拒绝回答。并返回'error"},
@@ -29,8 +33,8 @@ class Chatbot:
         # ]
 
     def chatbot(self, messages, query):
-        context = get_context()
-        messages.extend(context)
+        # context = get_context()
+        # messages.extend(context)
         # 进行rag
         res = search_in_vector_db(query)
 
@@ -57,7 +61,8 @@ class Chatbot:
         """
         messages.append({"role": "user", "content": prompt})
         response = self.client.chat.completions.create(
-            model="qwen2.5-7b-instruct-mlx",
+            model=LLM_MODEL,
+            # model="qwen2.5-7b-instruct-mlx",
             messages=messages,
             temperature=0.7,
             stream=True,
@@ -92,7 +97,7 @@ class Chatbot:
             logging.info(structured_output)
             # 在流式返回的最后，返回结构化输出
             # yield f"{structured_output}"
-            insert_context()
+            # insert_context()
 
         return generate_response()
 
@@ -142,9 +147,12 @@ def chunk_text(text: str, max_tokens: int = 3000) -> list[str]:
 
 # OpenAI 分析函数
 def analyze_with_gpt(content: str, prompt: str) -> str:
-    client = OpenAI(base_url=f"{LLM_BASE_URL}/v1", api_key="lm_studio")
+    load_dotenv()
+    api_key = os.getenv('QIANWEN_API_KEY')
+    client = OpenAI(base_url=f"{LLM_CLOUD_URL}/v1", api_key=api_key)
     response = client.chat.completions.create(
-        model="qwen2.5-7b-instruct-mlx",
+        # model="qwen2.5-7b-instruct-mlx",
+        model=LLM_MODEL,
         messages=[
             {"role": "system", "content": "你是一个专业文档分析助手"},
             {"role": "user", "content": f"{prompt}\n\n文档内容：{content}"}

@@ -1,5 +1,7 @@
 
-LLM_BASE_URL = 'http://192.168.105.36:8001'
+LLM_BASE_URL = 'http://192.168.105.30:8001'
+LLM_CLOUD_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+LLM_MODEL = 'qwq-plus'
 HOST = 'localhost'
 PORT = 3306
 USER = 'root'
