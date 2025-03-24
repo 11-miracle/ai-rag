@@ -52,7 +52,7 @@ async def chatbot(query: str = None):
         return {"message": "Hello, World!"}
     logging.debug(f"Received name: {query}")
     chatbot = Chatbot()
-    get_context()
+    # get_context()
     res = chatbot.chatbot(MESSAGES, query)
 
     # 创建一个异步生成器来处理流式响应

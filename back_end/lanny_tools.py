@@ -23,19 +23,12 @@ class Chatbot:
         # 设置本地服务器地址
         # self.client = OpenAI(base_url=f"{LLM_BASE_URL}/v1", api_key="lm_studio")
         self.client = OpenAI(base_url=f"{LLM_CLOUD_URL}", api_key=api_key)
-        # self.messages = [
-        #     {"role": "system",
-        #      "content": "你是专业的厨师，只能回答与做饭相关的问题。如果用户问到了其他问题，请拒绝回答。并返回'error"},
-        #     # {"role": "system", "content": "你是一个合格的 AI 助手，擅长中英文对话。请用简洁、友好的方式回答问题。"},
-        #     # {"role": "system", "content": "如果用户提出不合理或不安全的问题，请拒绝回答。"},
-        #     # {"role": "system", "content": "如果用户需要帮助，请提供清晰的指导。"}
-        #     # {"role": "user", "content": "你是谁"}
-        # ]
 
     def chatbot(self, messages, query):
         # context = get_context()
         # messages.extend(context)
         # 进行rag
+
         res = search_in_vector_db(query)
 
         # logging.info(f"--------{messages}")
@@ -55,11 +48,15 @@ class Chatbot:
 
         # 回答
         根据上述逻辑，请生成回答：
-        
+
         示例：
-            哟，你问啥子AI哦！不就是那种能自己动脑筋的机器嘛！就像电影里的机器人，能自己做决定，还能帮你干好多事。厉害得很哦，但有时候也像个智障，哈哈！
+            -哟，你问啥子AI哦！不就是那种能自己动脑筋的机器嘛！就像电影里的机器人，能自己做决定，还能帮你干好多事。厉害得很哦，但有时候也像个智障，哈哈！
+            -哎哟喂，你们这些外地人，问起AI能干啥子，老子今天就给你们摆摆清楚！你们晓得不，我们四川现在连挑二荆条辣椒都要用AI来帮忙选，搞得比我们这些老四川人还专业！
+            -哟，摆啥子龙门阵！你问啥子AI Agent，老子给你摆一摆！这玩意儿就是个高科技二哈，专门在电脑里面自己做主的智能体！它能自己看、自己听、自己想，还能自己动手干事情，比你家那只只会汪汪叫的狗子强多了！
+        
         """
         messages.append({"role": "user", "content": prompt})
+        # messages.append({"role": "user", "content": query})
         response = self.client.chat.completions.create(
             model=LLM_MODEL,
             # model="qwen2.5-7b-instruct-mlx",
@@ -163,22 +160,45 @@ def analyze_with_gpt(content: str, prompt: str) -> str:
 
 
 def embedding(text):
-    url = f"{LLM_BASE_URL}/v1/embeddings"
-    payload = {
-        "input": text,
-        "model": 'text-embedding-nomic-embed-text-v1.5'
-    }
-    response = requests.post(url, json=payload)
-    if response.status_code == 200:
-        return response.json()["data"][0]["embedding"]
-    else:
-        raise Exception(f"Failed to get embedding: {response.status_code}, {response.text}")
+    client = OpenAI(
+        api_key=os.getenv("QIANWEN_API_KEY"),  # 如果您没有配置环境变量，请在此处用您的API Key进行替换
+        base_url=LLM_CLOUD_URL  # 百炼服务的base_url
+    )
 
+    completion = client.embeddings.create(
+        model="text-embedding-v3",
+        input=text,
+        dimensions=768,
+        encoding_format="float"
+    )
 
+    return completion.model_dump_json()
+# def embedding(text):
+#     url = f"{LLM_BASE_URL}/v1/embeddings"
+#     payload = {
+#         "input": text,
+#         "model": 'text-embedding-nomic-embed-text-v1.5'
+#     }
+#     response = requests.post(url, json=payload)
+#     if response.status_code == 200:
+#         return response.json()["data"][0]["embedding"]
+#     else:
+#         raise Exception(f"Failed to get embedding: {response.status_code}, {response.text}")
+
+# 加载 .env 文件
+load_dotenv()
+api_key = os.getenv('QIANWEN_API_KEY')
+
+# openai_ef = OpenAIEmbeddingFunction(
+#     api_key="YOUR_API_KEY",
+#     model_name="text-embedding-nomic-embed-text-v1.5",
+#     api_base=f"{LLM_BASE_URL}/v1"
+# )
 openai_ef = OpenAIEmbeddingFunction(
-    api_key="YOUR_API_KEY",
-    model_name="text-embedding-nomic-embed-text-v1.5",
-    api_base=f"{LLM_BASE_URL}/v1"
+    api_key=api_key,
+    model_name="text-embedding-v3",
+    api_base=f"{LLM_CLOUD_URL}",
+    dimensions=768,
 )
 
 
@@ -204,21 +224,18 @@ def search_in_vector_db(query):
     # 初始化向量数据库
     persist_directory = './vector/chroma1'  # 持久化数据存放处
 
-    ector_db = chromadb
     client = chromadb.PersistentClient(persist_directory)
     collection = client.get_collection(name="test2", embedding_function=openai_ef)
 
     # 将查询文本转换为嵌入向量
-    query_embedding = embedding(query)
+    # query_embedding = embedding(query)
 
     # 在向量数据库中搜索
     results = collection.query(
-        query_embeddings=[query_embedding],
+        # query_embeddings=[query_embedding],
+        query_texts=[query],
         n_results=2,
-        # include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.distances]  # 使用 IncludeEnum 枚举
     )
-    # logging.info(f"搜索结果---------------{results}")
-    # logging.info(f"\ndoc结果---------------{results['documents'][0]}")
     return results['documents'][0][0]
 
 

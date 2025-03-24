@@ -48,7 +48,7 @@ from langchain_community.document_loaders import (
 #                                        mode="single", ).load()  # mode="elements" / single
 
 """JSONLoader"""
-raw_documents = JSONLoader('/Users/2dqy004/PycharmProjects/fastApiProject/test.json', jq_schema='.').load()  # mode="elements" / single
+raw_documents = JSONLoader('/test.json', jq_schema='.').load()  # mode="elements" / single
 
 
 
