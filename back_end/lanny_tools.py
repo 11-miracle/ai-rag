@@ -12,7 +12,9 @@ from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIE
 from docx import Document
 from openai import OpenAI
 from dotenv import load_dotenv
-from constant import LLM_BASE_URL, HOST, USER, PASSWORD, DATABASE, PORT, LLM_CLOUD_URL, LLM_MODEL
+
+from mysql_tools import get_context, insert_context
+from constant import LLM_BASE_URL, HOST, USER, PASSWORD, DATABASE, PORT, LLM_CLOUD_URL, LLM_MODEL, MESSAGES
 
 
 class Chatbot:
@@ -98,6 +100,86 @@ class Chatbot:
 
         return generate_response()
 
+    def chatbots(self, user_id, chatbot_id, query):
+        messages = []
+        # 获取上下文
+        context = get_context(user_id, chatbot_id)
+        # 将获取到的近10条上下文加入到messages中
+        messages.extend(context)
+        messages.extend(MESSAGES)
+        messages.append({"role": "user", "content": query})
+        # 进行rag
+        res = search_in_vector_db(query)
+
+        # 根据rag结果   构建提示词
+        prompt = f"""
+        # 指导原则
+        在回答以下问题时，请遵循以下逻辑：
+        1. **优先使用检索到的内容**：如果检索到的信息与问题直接相关，请根据这些信息生成回答。
+        2. **补充 LLM 的知识**：如果检索到的内容与问题无关，或者不足以回答问题，请不要使用检索到的内容进行回答！！！请仅你自己的知识进行回答。
+
+        # 检索到的内容
+        以下是检索到的相关信息：
+        - {res}
+
+        # 用户问题
+        {query}
+
+        # 回答
+        根据上述逻辑，请生成回答：
+
+        示例：
+            -哟，你问啥子AI哦！不就是那种能自己动脑筋的机器嘛！就像电影里的机器人，能自己做决定，还能帮你干好多事。厉害得很哦，但有时候也像个智障，哈哈！
+            -哎哟喂，你们这些外地人，问起AI能干啥子，老子今天就给你们摆摆清楚！你们晓得不，我们四川现在连挑二荆条辣椒都要用AI来帮忙选，搞得比我们这些老四川人还专业！
+            -哟，摆啥子龙门阵！你问啥子AI Agent，老子给你摆一摆！这玩意儿就是个高科技二哈，专门在电脑里面自己做主的智能体！它能自己看、自己听、自己想，还能自己动手干事情，比你家那只只会汪汪叫的狗子强多了！
+
+        """
+        messages.append({"role": "user", "content": prompt.strip()})  # 添加strip()去除多余空白
+        # logging.info(f'{messages},,{type(messages)}')
+        response = self.client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages,
+            temperature=0.7,
+            stream=True,
+            max_tokens=2048,
+        )
+
+        def generate_response():
+            assistant_response = ""
+            response_chunks = []
+            chunk_id = 1
+
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    assistant_response += content
+                    # print(content, end='')
+                    response_chunks.append({"chunk_id": chunk_id, "content": content})
+                    chunk_id += 1
+                    # logging.info(content)
+                    yield content  # 流式返回每个 chunk 的内容
+            messages.append({"role": "user", "content": query})
+            messages.append({"role": "assistant", "content": assistant_response})
+
+            # messages.append({"role": "user", "content": assistant_response})
+            # 构造结构化输出
+            structured_output = {
+                "user_input": query,
+                "model_response": assistant_response,
+                "timestamp": datetime.utcnow().isoformat(),
+                "messages": messages,
+            }
+            # logging.info(structured_output)
+            # 在流式返回的最后，返回结构化输出
+            # yield f"{structured_output}"
+            a = {"role": "user", "content": query}
+            b = {"role": "assistant", "content": assistant_response}
+            insert_context(user_id, chatbot_id, f"{a}")
+
+            insert_context(user_id, chatbot_id, f"{b}")
+
+        return generate_response()
+
 
 # 文件处理函数
 def process_file(filepath: str) -> str:
@@ -173,6 +255,8 @@ def embedding(text):
     )
 
     return completion.model_dump_json()
+
+
 # def embedding(text):
 #     url = f"{LLM_BASE_URL}/v1/embeddings"
 #     payload = {
@@ -239,47 +323,6 @@ def search_in_vector_db(query):
     return results['documents'][0][0]
 
 
-def create_db():
-    connection = pymysql.connect(host=HOST,
-                                 user=USER,
-                                 port=PORT,
-                                 password=PASSWORD,
-                                 database=DATABASE,
-                                 charset='utf8mb4', )
-    cursor = connection.cursor()
-    return cursor
 
-
-def insert_context(context):
-    cursor = create_db()
-    try:
-        # 将字符串转换为字典
-        context_dict = json.loads(context)
-
-        # 插入数据
-        cursor.execute("""
-            INSERT INTO context (user_id, context_id, context) 
-            VALUES (%s, %s, %s)
-            """, (1, 1, f'{context_dict}')) # 使用 json.dumps 将字典转换为字符串存储
-        cursor.connection.commit()  # 提交事务
-        print("数据插入成功！")
-        return {'status': True}
-    except Exception as e:
-        print(f"发生错误：{e}")
-        return {'status': False, 'message': str(e)}
-    finally:
-        cursor.close()
-
-def get_context():
-    cursor = create_db()
-    cursor.execute(f"""
-    select * from context order by time DESC limit 10;
-    """
-    )
-    history = cursor.fetchall()
-    context_history = []
-    for i in history:
-        context_history.append(i[3])
-    return context_history
 
 

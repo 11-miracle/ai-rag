@@ -7,9 +7,11 @@ from docx import Document
 from openai import OpenAI
 from starlette.responses import StreamingResponse, JSONResponse
 
+from mysql_tools import create_connection
 from constant import MESSAGES
 from lanny_tools import Chatbot, process_file, chunk_text, analyze_with_gpt, embedding, vector_db_add, \
     search_in_vector_db, get_context
+from request_class import UsernameRequest, ChatbotRequest
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from starlette.middleware.cors import CORSMiddleware
 
@@ -29,8 +31,6 @@ logging.basicConfig(
 )
 
 
-
-
 @app.get("/")
 async def root():
     return {"message": "Hello World, I'm a chatbot🤖"}
@@ -46,6 +46,7 @@ async def say_hello(name: str):
     return {"message": f"Hello {name}"}
 
 
+# 无对话上下文
 @app.get("/chatbot")
 async def chatbot(query: str = None):
     if query is None:
@@ -59,11 +60,41 @@ async def chatbot(query: str = None):
     return StreamingResponse(res, media_type="application/json")
 
 
+# 有对话上下文
+@app.post("/chatbots")
+async def chatbots(
+        chatbots: ChatbotRequest
+):
+    logging.debug(f"Received name: {chatbots.query}")
+    chatbot = Chatbot()
+    get_context(chatbots.user_id, chatbots.chatbot_id)
+    logging.info(f"{chatbots.query},{chatbots.user_id},{chatbots.chatbot_id}")
+    res = chatbot.chatbots(chatbots.user_id, chatbots.chatbot_id, chatbots.query)
+
+    # 创建一个异步生成器来处理流式响应
+    return StreamingResponse(res, media_type="application/json")
+
+
+@app.post("/get_uid_by_username")
+async def get_uid_by_username(username: UsernameRequest):  # 接受一个json文件
+    # 获取数据库对象
+    conn = create_connection()
+    cursor = conn.cursor()
+    logging.info(username.username)
+    # 查询用户ID
+    cursor.execute("SELECT id FROM Users WHERE username = %s", (username.username,))
+    result = cursor.fetchall()
+    # 关闭数据库连接
+    cursor.close()
+    conn.close()
+
+    return result
+
+
 # API 路由
 @app.post("/uploads")
 async def upload(
         file: UploadFile = File(...),  # 上传的文件
-        # query: str = Form("请总结这个文档")  # 用户问题，默认为总结文档
 ):
     # 文件上传目录
     UPLOAD_FOLDER = 'uploads'
@@ -97,6 +128,7 @@ async def upload(
         if os.path.exists(filepath):
             os.remove(filepath)
 
+
 @app.get("/search")
 async def search(query: str):
     logging.info(query)
@@ -107,6 +139,3 @@ async def search(query: str):
         "status": "success",
         "data": res
     })
-
-
-
