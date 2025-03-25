@@ -8,11 +8,11 @@
       <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/back_end/vector/chroma1/chroma.sqlite3</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
-    <data-source source="LOCAL" name="chatbot@localhost" uuid="210ff9a3-2672-47f8-9c2f-ce9847db3c52">
+    <data-source source="LOCAL" name="云" uuid="f754e5a6-7bc4-4f0e-a797-115f5fb5c39a">
       <driver-ref>mysql.8</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>com.mysql.cj.jdbc.Driver</jdbc-driver>
-      <jdbc-url>jdbc:mysql://localhost:3306/chatbot</jdbc-url>
+      <jdbc-url>jdbc:mysql://43.134.175.26:3306/demo</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
   </component>
