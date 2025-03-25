@@ -96,7 +96,6 @@ async def get_uid_by_username(username: UsernameRequest):  # 接受一个json文
 
 
 """
-上传文件到向量数据库上传文件到向量数据库上传文件到向量数据库上传文件到向量数据库
 上传文件到向量数据库
 可以接收多个文件，进行处理，然后上传到向量数据库
 返回一个json文件，包含状态，details
