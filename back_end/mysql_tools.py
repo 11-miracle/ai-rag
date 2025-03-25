@@ -4,6 +4,10 @@ import logging
 import pymysql
 
 from constant import HOST, PORT, USER, PASSWORD, DATABASE
+
+"创建一个数据库连接对象"
+
+
 def create_connection():
     conn = pymysql.connect(
         host=HOST,
@@ -14,28 +18,8 @@ def create_connection():
     )
     return conn
 
-# conn = create_connection()
-#
-# cursor = conn.cursor()
-# cursor.execute("select * from Users")
-# id_list = []
-# for i in cursor.fetchall():
-#     id_list.append(i[0])
-#
-# conn.close()
-# print(id_list)
 
-def create_db():
-    connection = pymysql.connect(host=HOST,
-                                 user=USER,
-                                 port=PORT,
-                                 password=PASSWORD,
-                                 database=DATABASE,
-                                 charset='utf8mb4', )
-    cursor = connection.cursor()
-    return cursor
-
-
+"""插入上下文"""
 def insert_context(user_id, chatbot_id, context):
     conn = create_connection()
     cursor = conn.cursor()
@@ -60,18 +44,29 @@ def insert_context(user_id, chatbot_id, context):
         cursor.close()
 
 
-# print(insert_context(1, 1, '{"role": "user", "content": "你好"}'))
-
-
+"""获取近10条对话上下文"""
 def get_context(user_id, chatbot_id):
-    cursor = create_db()
+    conn = create_connection()
+    cursor = conn.cursor()
     cursor.execute("SELECT * FROM context WHERE user_id = %s AND chatbot_id = %s ORDER BY time DESC LIMIT 10",
                    (user_id, chatbot_id))
     history = cursor.fetchall()
     context_history = []
     for i in history:
-        context_history.append(eval(i[3]))
+        context_history.append(eval(i[3]))  # 将字符串转成字典
     return context_history
 
-# print(get_context(1,1))
+"""获取用户对话历史记录"""
+def get_history(user_id, chatbot_id):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM context WHERE user_id = %s AND chatbot_id = %s ORDER BY time DESC",
+                   (user_id, chatbot_id))
+    history = cursor.fetchall()
+    context_history = []
+    for i in history:
+        context_history.append(eval(i[3]))  # 将字符串转成字典
+    return context_history
+
+
 

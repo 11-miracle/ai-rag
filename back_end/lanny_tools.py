@@ -1,3 +1,4 @@
+import csv
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ import chromadb
 import pymysql
 import requests
 from PyPDF2 import PdfReader
+from bs4 import BeautifulSoup
 from chromadb.api.types import IncludeEnum
 from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIEmbeddingFunction
 from docx import Document
@@ -110,7 +112,7 @@ class Chatbot:
         messages.append({"role": "user", "content": query})
         # 进行rag
         res = search_in_vector_db(query)
-
+        logging.info(f"查询结果--------{res}")
         # 根据rag结果   构建提示词
         prompt = f"""
         # 指导原则
@@ -181,11 +183,12 @@ class Chatbot:
         return generate_response()
 
 
-# 文件处理函数
+"""文件处理函数"""
 def process_file(filepath: str) -> str:
     ext = os.path.splitext(filepath)[1].lower()
 
     if ext == '.pdf':
+        from PyPDF2 import PdfReader
         text = ""
         with open(filepath, 'rb') as f:
             reader = PdfReader(f)
@@ -193,20 +196,64 @@ def process_file(filepath: str) -> str:
                 text += page.extract_text()
 
     elif ext == '.docx':
+        from docx import Document
         doc = Document(filepath)
         text = '\n'.join([para.text for para in doc.paragraphs])
 
+    elif ext == '.pptx':
+        from pptx import Presentation
+        prs = Presentation(filepath)
+        text = ""
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text += shape.text + "\n"
+                # 处理表格中的文本
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        for cell in row.cells:
+                            text += cell.text + "\t"
+                        text += "\n"
+
+    elif ext == '.xlsx':
+        from openpyxl import load_workbook
+        wb = load_workbook(filepath, read_only=True)
+        text = ""
+        for sheet in wb:
+            for row in sheet.iter_rows(values_only=True):
+                text += "\t".join([str(cell) for cell in row]) + "\n"
+
+    elif ext == '.md':
+        with open(filepath, 'r', encoding='utf-8') as f:
+            text = f.read()
+
+    elif ext == '.html':
+        with open(filepath, 'r', encoding='utf-8') as f:
+            soup = BeautifulSoup(f.read(), 'html.parser')
+            text = soup.get_text(separator='\n')
+
+
+
+    elif ext == '.csv':
+        with open(filepath, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            text = "\n".join([",".join(row) for row in reader])
+
     elif ext == '.txt':
-        with open(filepath, 'r') as f:
+        with open(filepath, 'r', encoding='utf-8') as f:
             text = f.read()
 
     else:
-        raise ValueError("Unsupported file format")
+        raise ValueError(f"Unsupported file format: {ext}")
 
-    return text
+    # 统一清理文本格式
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    return text.strip()
+
+"""文本处理函数"""
 
 
-# 文本分块函数
+"""文本分块函数"""
 def chunk_text(text: str, max_tokens: int = 3000) -> list[str]:
     words = text.split()
     chunks = []
@@ -240,10 +287,10 @@ def analyze_with_gpt(content: str, prompt: str) -> str:
     )
     return response.choices[0].message.content
 
-
+"""返回向量化数据"""
 def embedding(text):
     client = OpenAI(
-        api_key=os.getenv("QIANWEN_API_KEY"),  # 如果您没有配置环境变量，请在此处用您的API Key进行替换
+        api_key=os.getenv("QIANWEN_API_KEY"),
         base_url=LLM_CLOUD_URL  # 百炼服务的base_url
     )
 
@@ -269,7 +316,7 @@ def embedding(text):
 #     else:
 #         raise Exception(f"Failed to get embedding: {response.status_code}, {response.text}")
 
-# 加载 .env 文件
+"""加载 .env 文件"""
 load_dotenv()
 api_key = os.getenv('QIANWEN_API_KEY')
 
@@ -278,6 +325,7 @@ api_key = os.getenv('QIANWEN_API_KEY')
 #     model_name="text-embedding-nomic-embed-text-v1.5",
 #     api_base=f"{LLM_BASE_URL}/v1"
 # )
+"""定义一个OpenAIEmbeddingFunction实例"""
 openai_ef = OpenAIEmbeddingFunction(
     api_key=api_key,
     model_name="text-embedding-v3",
@@ -285,11 +333,12 @@ openai_ef = OpenAIEmbeddingFunction(
     dimensions=768,
 )
 
-
+"""向向量数据库中添加数据"""
 def vector_db_add(texts):
     # 初始化向量数据库
     persist_directory = './vector/chroma1'  # 持久化数据  存放处
     client = chromadb.PersistentClient(persist_directory)
+    # 添加了embedding函数
     collection = client.get_or_create_collection(name="test2", embedding_function=openai_ef)
     # 将文件添加到向量数据库中
     collection.add(
@@ -320,8 +369,11 @@ def search_in_vector_db(query):
         query_texts=[query],
         n_results=2,
     )
+    logging.info(f"-----{query},\n\n---{results['distances'][0][0]}")
+    if results['distances'][0][0] > 0.65:
+        logging.info('未找到相关信息')
+        return ''
     return results['documents'][0][0]
-
 
 
 

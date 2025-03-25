@@ -7,7 +7,7 @@ from docx import Document
 from openai import OpenAI
 from starlette.responses import StreamingResponse, JSONResponse
 
-from mysql_tools import create_connection
+from mysql_tools import create_connection, get_history
 from constant import MESSAGES
 from lanny_tools import Chatbot, process_file, chunk_text, analyze_with_gpt, embedding, vector_db_add, \
     search_in_vector_db, get_context
@@ -63,6 +63,7 @@ async def chatbot(query: str = None):
 # 有对话上下文
 @app.post("/chatbots")
 async def chatbots(
+        # 使用json字符串发送请求，
         chatbots: ChatbotRequest
 ):
     logging.debug(f"Received name: {chatbots.query}")
@@ -91,7 +92,7 @@ async def get_uid_by_username(username: UsernameRequest):  # 接受一个json文
     return result
 
 
-# API 路由
+"""上传文件，"""
 @app.post("/uploads")
 async def upload(
         file: UploadFile = File(...),  # 上传的文件
@@ -139,3 +140,20 @@ async def search(query: str):
         "status": "success",
         "data": res
     })
+
+"""获取历史记录"""
+@app.post("/get_history")
+async def history(
+        # 使用表单数据发送请求
+        user_id: int = Form(...),
+        chatbot_id: int = Form(...),
+):
+    logging.info(f"Received name: {user_id},{chatbot_id}")
+    history = get_history(user_id, chatbot_id)
+    return JSONResponse({
+        "status": "success",
+        "data": history
+    })
+
+
+
