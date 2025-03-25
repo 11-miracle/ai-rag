@@ -27,7 +27,7 @@ class Chatbot:
         # 设置本地服务器地址
         # self.client = OpenAI(base_url=f"{LLM_BASE_URL}/v1", api_key="lm_studio")
         self.client = OpenAI(base_url=f"{LLM_CLOUD_URL}", api_key=api_key)
-
+    """对话函数，没有实现上下文"""
     def chatbot(self, messages, query):
         # context = get_context()
         # messages.extend(context)
@@ -102,6 +102,7 @@ class Chatbot:
 
         return generate_response()
 
+    """对话函数，实现上下文存储，历史记录读取"""
     def chatbots(self, user_id, chatbot_id, query):
         messages = []
         # 获取上下文
@@ -250,8 +251,6 @@ def process_file(filepath: str) -> str:
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     return text.strip()
 
-"""文本处理函数"""
-
 
 """文本分块函数"""
 def chunk_text(text: str, max_tokens: int = 3000) -> list[str]:
@@ -336,10 +335,10 @@ openai_ef = OpenAIEmbeddingFunction(
 """向向量数据库中添加数据"""
 def vector_db_add(texts):
     # 初始化向量数据库
-    persist_directory = './vector/chroma1'  # 持久化数据  存放处
+    persist_directory = './vector/chroma2'  # 持久化数据  存放处
     client = chromadb.PersistentClient(persist_directory)
     # 添加了embedding函数
-    collection = client.get_or_create_collection(name="test2", embedding_function=openai_ef)
+    collection = client.get_or_create_collection(name="test3", embedding_function=openai_ef)
     # 将文件添加到向量数据库中
     collection.add(
         documents=texts,
@@ -352,13 +351,13 @@ def vector_db_add(texts):
     )
     logging.info('上传到向量数据库成功')
 
-
+"""在向量数据库中搜索相似值"""
 def search_in_vector_db(query):
     # 初始化向量数据库
-    persist_directory = './vector/chroma1'  # 持久化数据存放处
+    persist_directory = './vector/chroma2'  # 持久化数据存放处
 
     client = chromadb.PersistentClient(persist_directory)
-    collection = client.get_collection(name="test2", embedding_function=openai_ef)
+    collection = client.get_collection(name="test3", embedding_function=openai_ef)
 
     # 将查询文本转换为嵌入向量
     # query_embedding = embedding(query)

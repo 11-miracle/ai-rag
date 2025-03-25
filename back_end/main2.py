@@ -1,14 +1,17 @@
 import logging
 import os
 import uuid
+from typing import List
 
 from PyPDF2 import PdfReader
 from docx import Document
 from openai import OpenAI
 from starlette.responses import StreamingResponse, JSONResponse
 
-from mysql_tools import create_connection, get_history
+from mysql_tools import create_connection, get_history, get_chatbot_from_user
+
 from constant import MESSAGES
+
 from lanny_tools import Chatbot, process_file, chunk_text, analyze_with_gpt, embedding, vector_db_add, \
     search_in_vector_db, get_context
 from request_class import UsernameRequest, ChatbotRequest
@@ -46,7 +49,7 @@ async def say_hello(name: str):
     return {"message": f"Hello {name}"}
 
 
-# 无对话上下文
+"""无对话上下文"""
 @app.get("/chatbot")
 async def chatbot(query: str = None):
     if query is None:
@@ -60,8 +63,8 @@ async def chatbot(query: str = None):
     return StreamingResponse(res, media_type="application/json")
 
 
-# 有对话上下文
-@app.post("/chatbots")
+"""有对话上下文"""
+@app.post("/chat/chatbots")
 async def chatbots(
         # 使用json字符串发送请求，
         chatbots: ChatbotRequest
@@ -76,7 +79,7 @@ async def chatbots(
     return StreamingResponse(res, media_type="application/json")
 
 
-@app.post("/get_uid_by_username")
+@app.post("/user/get_uid_by_username")
 async def get_uid_by_username(username: UsernameRequest):  # 接受一个json文件
     # 获取数据库对象
     conn = create_connection()
@@ -92,42 +95,80 @@ async def get_uid_by_username(username: UsernameRequest):  # 接受一个json文
     return result
 
 
-"""上传文件，"""
-@app.post("/uploads")
+"""
+上传文件到向量数据库
+可以接收多个文件，进行处理，然后上传到向量数据库
+返回一个json文件，包含状态，details
+"""
+
+
+
+@app.post("/file/uploads")
 async def upload(
-        file: UploadFile = File(...),  # 上传的文件
+        files: List[UploadFile] = File(...),  # 接收文件列表
 ):
     # 文件上传目录
     UPLOAD_FOLDER = 'uploads'
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-    logging.info(f"Received file: {file.filename}")
-    filetype = file.filename.split('.')[-1]
+    results = []
 
-    # 保存文件
-    file_id = str(uuid.uuid4())
-    filepath = os.path.join(UPLOAD_FOLDER, file_id + f'.{filetype}')
-    logging.info(f"Received file: {filepath}")
-    with open(filepath, 'wb') as f:
-        f.write(await file.read())
+    for file in files:
+        file_id = str(uuid.uuid4())
+        filetype = file.filename.split('.')[-1]
+        filepath = os.path.join(UPLOAD_FOLDER, file_id + f'.{filetype}')
+        logging.info(f"Processing file: {file.filename}")
 
-    try:
-        # 提取文本
-        text = process_file(filepath)
-        chunks = chunk_text(text)
-        # 向向量数据库添加数据
-        vector_db_add(chunks)
-        return JSONResponse({
-            "status": "success",
-        })
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # 清理临时文件
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        try:
+            # 保存文件
+            with open(filepath, 'wb') as f:
+                content = await file.read()
+                f.write(content)
+
+            # 处理文件内容
+            text = process_file(filepath)
+            # 分割文本
+            chunks = chunk_text(text)
+            # 向向量数据库添加数据
+            vector_db_add(chunks)
+
+            results.append({
+                "filename": file.filename,
+                "status": "success",
+                "file_id": file_id
+            })
+
+        except ValueError as e:
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "detail": str(e)
+            })
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "detail": f"Internal error: {str(e)}"
+            })
+            logging.error(f"Error processing {file.filename}: {str(e)}")
+        finally:
+            # 清理临时文件
+            if os.path.exists(filepath):
+                os.remove(filepath)
+
+    # 检查是否有错误
+    if any(res["status"] == "error" for res in results):
+        return JSONResponse(
+            status_code=207,  # Multi-Status
+            content={"status": "partial_success", "details": results}
+        )
+    else:
+        return JSONResponse(
+            content={"status": "success", "details": results}
+        )
+
+
+"""弃用"""
 
 
 @app.get("/search")
@@ -141,8 +182,15 @@ async def search(query: str):
         "data": res
     })
 
-"""获取历史记录"""
-@app.post("/get_history")
+
+"""
+获取历史记录
+接受一个user_id和chatbot_id
+返回一个history列表
+"""
+
+
+@app.post("/chat/get_history")
 async def history(
         # 使用表单数据发送请求
         user_id: int = Form(...),
@@ -156,4 +204,21 @@ async def history(
     })
 
 
+"""
+获取用户有多少个chatbot
+接收一个user_id
+返回一个chatbot列表
+"""
 
+
+@app.get("/user/get_chatbots_from_user")
+async def get_chatbots(
+        # 使用表单数据发送请求
+        user_id: int = Form(...),
+):
+    chatbots = get_chatbot_from_user(user_id)
+    logging.info(chatbots)
+    return JSONResponse({
+        "status": "success",
+        "data": chatbots
+    })

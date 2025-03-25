@@ -68,5 +68,15 @@ def get_history(user_id, chatbot_id):
         context_history.append(eval(i[3]))  # 将字符串转成字典
     return context_history
 
-
+def get_chatbot_from_user(user_id):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT chatbot_id FROM context where user_id = %s",user_id)
+    chatbots_list = cursor.fetchall()
+    chatbot = []
+    for i in chatbots_list:
+        chatbot.append(i[0])
+    chatbot = list(set(chatbot))
+    logging.info(f"chatbot_id: {chatbot}")
+    return chatbot
 
