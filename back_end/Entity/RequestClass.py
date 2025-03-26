@@ -1,3 +1,6 @@
+from typing import List
+
+from fastapi import UploadFile, File
 from pydantic import BaseModel
 
 
@@ -21,5 +24,9 @@ class ChatbotRequest(BaseModel):
     chatbot_id: int = None
     query: str = None
 
+
+class FileUploadRequest(BaseModel):
+    user_id: int = None
+    files: List[UploadFile] = File(...)
 
 
