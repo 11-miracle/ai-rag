@@ -3,19 +3,16 @@ import os
 import uuid
 from typing import List
 
-from PyPDF2 import PdfReader
-from docx import Document
-from openai import OpenAI
 from starlette.responses import StreamingResponse, JSONResponse
 
-from mysql_tools import create_connection, get_history, get_chatbot_from_user
+from Entity.CreateChatbot import CreateChatbot
+from mysql_tools import DataBaseManage
 
 from constant import MESSAGES
 
-from lanny_tools import Chatbot, process_file, chunk_text, analyze_with_gpt, embedding, vector_db_add, \
-    search_in_vector_db, get_context
-from request_class import UsernameRequest, ChatbotRequest
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from lanny_tools import Chatbot, EmbeddingFunc
+from Entity.RequestClass import UsernameRequest, ChatbotRequest
+from fastapi import FastAPI, UploadFile, File, Form
 from starlette.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -32,6 +29,9 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+dataBM = DataBaseManage()
+embeddingFunc = EmbeddingFunc()
 
 
 @app.get("/")
@@ -50,6 +50,8 @@ async def say_hello(name: str):
 
 
 """无对话上下文"""
+
+
 @app.get("/chatbot")
 async def chatbot(query: str = None):
     if query is None:
@@ -64,6 +66,8 @@ async def chatbot(query: str = None):
 
 
 """有对话上下文"""
+
+
 @app.post("/chat/chatbots")
 async def chatbots(
         # 使用json字符串发送请求，
@@ -71,7 +75,7 @@ async def chatbots(
 ):
     logging.debug(f"Received name: {chatbots.query}")
     chatbot = Chatbot()
-    get_context(chatbots.user_id, chatbots.chatbot_id)
+
     logging.info(f"{chatbots.query},{chatbots.user_id},{chatbots.chatbot_id}")
     res = chatbot.chatbots(chatbots.user_id, chatbots.chatbot_id, chatbots.query)
 
@@ -82,7 +86,8 @@ async def chatbots(
 @app.post("/user/get_uid_by_username")
 async def get_uid_by_username(username: UsernameRequest):  # 接受一个json文件
     # 获取数据库对象
-    conn = create_connection()
+    dataDM = DataBaseManage()
+    conn = dataDM.create_connection()
     cursor = conn.cursor()
     logging.info(username.username)
     # 查询用户ID
@@ -100,7 +105,6 @@ async def get_uid_by_username(username: UsernameRequest):  # 接受一个json文
 可以接收多个文件，进行处理，然后上传到向量数据库
 返回一个json文件，包含状态，details
 """
-
 
 
 @app.post("/file/uploads")
@@ -123,13 +127,13 @@ async def upload(
             with open(filepath, 'wb') as f:
                 content = await file.read()
                 f.write(content)
-
+            embeddingFunc = EmbeddingFunc()
             # 处理文件内容
-            text = process_file(filepath)
+            text = embeddingFunc.process_file(filepath)
             # 分割文本
-            chunks = chunk_text(text)
+            chunks = embeddingFunc.chunk_text(text)
             # 向向量数据库添加数据
-            vector_db_add(chunks)
+            embeddingFunc.vector_db_add(chunks)
 
             results.append({
                 "filename": file.filename,
@@ -173,8 +177,9 @@ async def upload(
 @app.get("/search")
 async def search(query: str):
     logging.info(query)
+    embeddingFunc = EmbeddingFunc()
 
-    res = search_in_vector_db(query)
+    res = embeddingFunc.search_in_vector_db(query)
     logging.info(f"----=-==-=-{res}")
     return JSONResponse({
         "status": "success",
@@ -196,7 +201,8 @@ async def history(
         chatbot_id: int = Form(...),
 ):
     logging.info(f"Received name: {user_id},{chatbot_id}")
-    history = get_history(user_id, chatbot_id)
+    dataBM = DataBaseManage()
+    history = dataBM.get_history(user_id, chatbot_id)
     return JSONResponse({
         "status": "success",
         "data": history
@@ -215,9 +221,57 @@ async def get_chatbots(
         # 使用表单数据发送请求
         user_id: int = Form(...),
 ):
-    chatbots = get_chatbot_from_user(user_id)
+    dataBM = DataBaseManage()
+    chatbots = dataBM.get_chatbot_from_user(user_id)
     logging.info(chatbots)
     return JSONResponse({
         "status": "success",
         "data": chatbots
     })
+
+
+"""创建一个新的agent"""
+
+
+@app.post("/create_agent")
+async def create_agent(
+        createChatbot: CreateChatbot
+):
+    logging.info(
+        f"Received params: {createChatbot.user_id},"
+        f"{createChatbot.name},"
+        f"{createChatbot.description},"
+        f"{createChatbot.prompt} ")
+
+    dataBM = DataBaseManage()
+    dataBM.create_chatbot(createChatbot.user_id, createChatbot.name, createChatbot.description, createChatbot.prompt)
+
+
+    return JSONResponse({
+        "status": "success",
+        "data": "create_agent"
+    })
+"""更新agent"""
+@app.post("/update_agent")
+async def update_agent(
+        createChatbot: CreateChatbot
+):
+    logging.info(
+        f"Received params: {createChatbot.user_id},"
+        f"{createChatbot.name},"
+        f"{createChatbot.description},"
+        f"{createChatbot.prompt} ")
+    dataBM = DataBaseManage()
+    dataBM.update_chatbot(createChatbot.user_id, createChatbot.name, createChatbot.description, createChatbot.prompt)
+    # dataBM = DataBaseManage()
+    # chatbots_list = dataBM.get_chatbot_from_user(user_id)
+    # logging.info(chatbots_list)
+
+    return JSONResponse({
+        "status": "success",
+        "data": "create_agent"
+    })
+
+
+
+
