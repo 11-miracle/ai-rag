@@ -9,6 +9,7 @@ from constant import HOST, PORT, USER, PASSWORD, DATABASE
 
 
 class DataBaseManage:
+    """创建数据库连接"""
     def create_connection(self):
         conn = pymysql.connect(
             host=HOST,
@@ -93,39 +94,42 @@ class DataBaseManage:
         conn = self.create_connection()
         cursor = conn.cursor()
         try:
+            # 先检查用户已有的chatbot数量
+            cursor.execute("SELECT COUNT(*) FROM chatbots WHERE user_id = %s", (user_id,))
+            count = cursor.fetchone()[0]
+            if count >= 5:
+                return {'status': 200, "message": "创建agent失败，每个用户最多创建5个agent"}
+        
+            # 再执行INSERT操作
             cursor.execute("""
                 INSERT INTO chatbots (user_id, name, description, prompt)
                 VALUES (%s, %s, %s, %s)
                 """, (user_id, name, description, prompt))
-            conn.commit()  # 提交事务
+            
+            # 精确查询刚插入的记录
+            cursor.execute("""
+                SELECT id FROM chatbots 
+                WHERE user_id = %s AND name = %s 
+                ORDER BY id DESC LIMIT 1
+                """, (user_id, name))
+            chatbot_id = cursor.fetchone()[0]
+            
+            # 生成并更新collection_name
+            collection_name = f"{user_id}_{chatbot_id}"
 
-            """写入后，需要获取chatbot_id，然后根据user_id和chatbot_id生成colloction_name"""
-            cursor.execute("SELECT id FROM chatbots WHERE user_id = %s AND name = %s ORDER BY create_time DESC",
-                           (user_id, name))
-            res = cursor.fetchall()
-            if len(res) > 5:
-                chatbot_id = res[0][0]
-
-            logging.info(f"all_chatbot_id:{res},,chatbot_id: {chatbot_id}")
-
-            """写入collection_name"""
-            if res[0][0] is not None:
-                collection_name = f"{user_id}_{res[0][0]}"
-
-                cursor.execute("""
-                    update chatbots set collection_name = %s
-                    where id = %s 
-                    """, (collection_name, chatbot_id,))
-                conn.commit()  # 提交事务
-
-            logging.info(f"collection_name: {collection_name}")
-
-            cursor.close()
-            conn.close()
+            cursor.execute("""
+                UPDATE chatbots SET collection_name = %s
+                WHERE id = %s 
+                """, (collection_name, chatbot_id))
+                
+            conn.commit()
             return {'status': 200, "user_id": user_id, 'chatbot_id': chatbot_id, "collection_name": collection_name}
         except Exception as e:
-            print(f"发生错误：{e}")
+            conn.rollback()
             return {'status': 200, "message": f"创建agent失败，原因:{e}"}
+        finally:
+            cursor.close()
+            conn.close()
 
     """更新chatbot"""
 
@@ -146,6 +150,7 @@ class DataBaseManage:
             print(f"发生错误：{e}")
             return {'status': 200, "message": f"创建agent失败，原因:{e}"}
 
+    """通过chatbot_id获取collection_name"""
     def get_col_name_by_chatbot_id(self,chatbot_id):
         conn = self.create_connection()
         cursor = conn.cursor()
@@ -157,10 +162,10 @@ class DataBaseManage:
             res = cursor.fetchall()
             cursor.close()
             conn.close()
-            logging.info(f"chatbot_id1111:{res}")
             return {'status': 200, "message": "更新成功", "data": res[0][0]}
 
         except Exception as e:
             print(f"发生错误：{e}")
             return {'status': 200, "message": f"获取collection_name失败，原因:{e}"}
+
 

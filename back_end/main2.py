@@ -134,7 +134,7 @@ async def upload(
         else:
             filetype = 'unknown'
         filepath = os.path.join(UPLOAD_FOLDER, file_id + f'.{filetype}')
-        logging.info(f"Processing file: {file.filename}")
+        logging.info(f"--------Processing file: {file}")
 
         try:
             # 保存文件
@@ -144,18 +144,47 @@ async def upload(
             embeddingFunc = EmbeddingFunc()
             # 处理文件内容
             text = embeddingFunc.process_file(filepath)
-            # 分割文本
-            chunks = embeddingFunc.chunk_text(text)
-            # 向向量数据库添加数据
-            embeddingFunc.vector_db_add(chunks, collection_name)
-            logging.info(f"demo3")
+            logging.info(f"======这是文本的长度{len(text)}")
+            """处理文本的长度，根据阿里云向量分割要求，2000分块，100的重叠，
+            最终，每次向量化的数据大小不得超过19000的长度，否则会报错。
+            对于超过19000的，进行循环写入向量数据库"""
+            if len(text) > 19000:
+                # 初始化一个空列表来存储分割后的文本块
+                chunks = []
+
+                # 计算需要分割的块数
+                num_chunks = (len(text) + 19000 - 1) // 19000  # 向上取整
+
+                # 循环分割文本
+                for i in range(num_chunks):
+                    _text = text[i * 19000:(i + 1) * 19000]
+                    # 分割文本
+                    chunk = embeddingFunc.split_text(_text, 2000, 100)
+                    # chunks.extend(chunk)
+                    # 向向量数据库添加数据
+                    embeddingFunc.vector_db_add(chunk, collection_name)
+                    results.append({
+                        "filename": file.filename,
+                        "status": "success",
+                        "file_id": file_id
+                    })
 
 
-            results.append({
-                "filename": file.filename,
-                "status": "success",
-                "file_id": file_id
-            })
+            else:
+                # 分割文本
+                chunks = embeddingFunc.split_text(text,2000, 100)
+
+                # 向向量数据库添加数据
+                embeddingFunc.vector_db_add(chunks, collection_name)
+
+
+                results.append({
+                    "filename": file.filename,
+                    "status": "success",
+                    "file_id": file_id
+                })
+
+            # logging.info(f"\n====={file.filename},filetype:{filetype},file_context:{text}=====\n")
 
         except ValueError as e:
             results.append({

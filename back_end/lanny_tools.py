@@ -2,8 +2,11 @@ import csv
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime
+from typing import List
+
 import chromadb
 from PyPDF2 import PdfReader
 from bs4 import BeautifulSoup
@@ -114,6 +117,7 @@ class Chatbot:
         messages.append({"role": "user", "content": query})
         # 进行rag
         embedding_func = EmbeddingFunc()
+
         res = embedding_func.search_in_vector_db(query, user_id, chatbot_id)
         # logging.info(f"查询结果--------{res}")
 
@@ -206,7 +210,7 @@ class EmbeddingFunc:
             api_key=self.api_key,
             model_name="text-embedding-v3",
             api_base=f"{LLM_CLOUD_URL}",
-            dimensions=768,
+            dimensions=1024,
         )
 
     """文件处理函数"""
@@ -279,26 +283,172 @@ class EmbeddingFunc:
             raise ValueError(f"Unsupported file format: {ext}")
 
         # 统一清理文本格式
-        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        text = text.replace('\n', '').replace('\r', '\n').replace('\t', ' ').replace(' ','')
         return text.strip()
 
     """文本分块函数"""
 
-    def chunk_text(self, text: str, max_tokens: int = 3000) -> list[str]:
+    import logging
+
+    def chunk_text(self, text: str, max_tokens: int = 100) -> list[str]:
+        """Split text into chunks where each chunk has at most `max_tokens` tokens (approximate).
+
+        Args:
+            text: Input text to split.
+            max_tokens: Maximum tokens per chunk (including spaces).
+
+        Returns:
+            List of text chunks.
+        """
+        if not text.strip():
+            return []
+
         words = text.split()
         chunks = []
         current_chunk = []
+        current_length = 0  # Track length to avoid repeated joins
 
         for word in words:
-            if len(current_chunk) + len(word) + 1 > max_tokens:  # +1 for space
+            word_length = len(word) + (1 if current_chunk else 0)  # Add space if not first word
+            if current_length + word_length > max_tokens:
                 chunks.append(' '.join(current_chunk))
-                current_chunk = []
-            current_chunk.append(word)
+                current_chunk = [word]
+                current_length = len(word)
+            else:
+                current_chunk.append(word)
+                current_length += word_length
 
         if current_chunk:
             chunks.append(' '.join(current_chunk))
 
+        logging.info(f"分割为 {len(chunks)} 个 chunks，首段预览: {chunks[0][:50]}...")
         return chunks
+
+    def split_text(
+            self,
+            text: str,
+            chunk_size: int = 1000,
+            chunk_overlap: int = 100,
+            recursive: bool = False
+    ) -> List[str]:
+        """
+        将文档分割成较小的文本块
+
+        Args:
+            text: 要分割的文本
+            chunk_size: 每个文本块的最大字符数
+            chunk_overlap: 相邻文本块之间的重叠字符数
+            recursive: 是否使用递归分割器
+
+        Returns:
+            分割后的文本块列表
+        """
+
+        if not text:
+            return []
+
+        if recursive:
+            return self._recursive_split(text, chunk_size, chunk_overlap)
+        else:
+            return self._simple_split(text, chunk_size, chunk_overlap)
+
+    def _simple_split(self, text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+        """简单固定长度分割"""
+        logging.info(f"----文件长度{len(text)}")
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap 必须小于 chunk_size")
+
+        chunks = []
+        start = 0
+        text_length = len(text)
+
+        while start < text_length:
+            end = min(start + chunk_size, text_length)
+            chunks.append(text[start:end])
+
+            # 计算下一个起始位置（考虑重叠）
+            start = end - chunk_overlap if end < text_length else end
+        logging.info(f"分割为 {len(chunks)} 个 chunks，首段预览: {chunks[0][:50]}...")
+        return chunks
+
+    def _recursive_split(self, text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+        """递归分割（优先按段落、句子、短语分割）"""
+        # 定义分割符优先级（从大到小）
+        separators = [
+            "\n\n",  # 双换行（段落分隔）
+            "\n",  # 单换行
+            "(?<=。)",  # 中文句号后
+            "(?<=！)",  # 中文感叹号后
+            "(?<=？)",  # 中文问号后
+            "(?<=;)",  # 分号后
+            "(?<=,)",  # 逗号后
+            " ",  # 空格
+            ""  # 最后按字符分割
+        ]
+
+        # 递归分割函数
+        def _split_recursively(text: str, separators: List[str]) -> List[str]:
+            if len(text) <= chunk_size:
+                return [text]
+
+            current_sep = separators[0]
+            remaining_seps = separators[1:]
+
+            if current_sep:  # 非空分隔符
+                parts = re.split(f"({current_sep})", text)
+                # 重新组合分隔符和内容
+                combined = []
+                for i in range(0, len(parts) - 1, 2):
+                    combined.append(parts[i] + parts[i + 1])
+                if len(parts) % 2 == 1:
+                    combined.append(parts[-1])
+            else:  # 空分隔符表示按字符分割
+                combined = list(text)
+
+            # 尝试合并小片段
+            chunks = []
+            current_chunk = ""
+            for part in combined:
+                if len(current_chunk) + len(part) <= chunk_size:
+                    current_chunk += part
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = part
+
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            # 如果分割后仍有超长块，则使用下一个分隔符递归处理
+            if any(len(chunk) > chunk_size for chunk in chunks) and remaining_seps:
+                new_chunks = []
+                for chunk in chunks:
+                    if len(chunk) > chunk_size:
+                        new_chunks.extend(_split_recursively(chunk, remaining_seps))
+                    else:
+                        new_chunks.append(chunk)
+                chunks = new_chunks
+
+            return chunks
+
+        chunks = _split_recursively(text, separators)
+
+        # 添加重叠部分
+        if chunk_overlap > 0:
+            overlapped_chunks = []
+            for i in range(len(chunks)):
+                if i == 0:
+                    overlapped_chunks.append(chunks[i])
+                else:
+                    prev_end = max(0, len(chunks[i - 1]) - chunk_overlap)
+                    overlapped = chunks[i - 1][prev_end:] + chunks[i]
+                    overlapped_chunks.append(overlapped)
+            chunks = overlapped_chunks
+
+        return chunks
+
+
+
 
     # OpenAI 分析函数------------------
     def analyze_with_gpt(self, content: str, prompt: str) -> str:
@@ -327,7 +477,7 @@ class EmbeddingFunc:
         completion = client.embeddings.create(
             model="text-embedding-v3",
             input=text,
-            dimensions=768,
+            dimensions=2000,
             encoding_format="float"
         )
 
@@ -350,6 +500,12 @@ class EmbeddingFunc:
     def vector_db_add(self, texts, collection_name):
         # 初始化向量数据库
         persist_directory = './vector/chroma2'  # 持久化数据  存放处
+        # TODO 这里会出现问题，如果没有创建目录，会显示没有权限，这是一个只读目录
+        # 如果目录不存在，则创建它（包括所有必要的父目录）
+        if not os.path.exists(persist_directory):
+            os.makedirs(persist_directory)
+
+
         client = chromadb.PersistentClient(persist_directory)
         logging.info(f'开始上传到向量数据库--\n {collection_name}')
         # 添加了embedding函数 TODO 出错点，需要注意，有些参数需要是字符串形式
